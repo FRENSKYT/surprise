@@ -45,7 +45,8 @@ async function envoyer(e) {
     console.log(`Mail envoyé à ${dest.length} destinataire(s) : ${e.sujet}`); ok = true;
   }
   if (process.env.NTFY_TOPIC) {
-    const r = await fetch(`https://ntfy.sh/${encodeURIComponent(process.env.NTFY_TOPIC)}`, { method: 'POST', body: e.texte, headers: { Title: e.sujet.replace(/[^\x20-\x7E]/g, '').trim() || 'Surprise', Tags: 'gift', Click: SITE, Priority: '4' } });
+    // Envoi en JSON pour que les accents et emojis du titre passent correctement.
+    const r = await fetch('https://ntfy.sh/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic: process.env.NTFY_TOPIC, title: e.sujet, message: e.texte, click: SITE, priority: 4 }) });
     console.log(`Push ntfy : ${r.status}`); ok = true;
   }
   if (!ok) console.log('Aucun moyen d\'envoi configuré (secrets manquants) :', e.sujet);
