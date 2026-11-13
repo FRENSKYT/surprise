@@ -2,13 +2,18 @@ name: Notifications des indices
 
 on:
   schedule:
-    - cron: '17 * * * *'   # toutes les heures ; le script n'envoie que si un indice arrive dans l'heure
+    - cron: '17 * * * *'   # toutes les heures (GitHub en saute souvent, ce n'est pas grave)
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       test:
         description: 'Envoyer une notification de test maintenant'
         type: boolean
         default: true
+
+permissions:
+  contents: write          # pour enregistrer la liste des notifications déjà programmées
 
 concurrency:
   group: notifications
@@ -32,3 +37,12 @@ jobs:
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      - name: Enregistrer les notifications programmées
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898699+github-actions[bot]@users.noreply.github.com"
+          git add .github/notifications-programmees.json
+          if git diff --cached --quiet; then echo "Rien à enregistrer."; exit 0; fi
+          git commit -m "Notifications programmées [skip ci]"
+          for i in 1 2 3; do git pull --rebase -q && git push && exit 0; sleep 5; done
+          exit 1

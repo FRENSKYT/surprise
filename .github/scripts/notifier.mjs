@@ -54,13 +54,43 @@ async function envoyer(e) {
 
 const attendre = (ms) => new Promise(r => setTimeout(r, Math.max(0, ms)));
 
+// --- Push ntfy : programmé à l'avance chez ntfy (jusqu'à 3 jours), qui livre à l'heure pile. ---
+// GitHub saute souvent des exécutions planifiées : il suffit donc qu'UNE exécution passe
+// tous les 3 jours. Le fichier d'état évite de programmer deux fois la même notification.
+const ETAT = new URL('../notifications-programmees.json', import.meta.url);
+async function programmerNtfy() {
+  if (!process.env.NTFY_TOPIC) { console.log('NTFY_TOPIC absent : pas de push programmé.'); return; }
+  let deja = []; try { deja = JSON.parse(fs.readFileSync(ETAT, 'utf8')); } catch {}
+  const maintenant = Date.now(), horizon = maintenant + 70 * 3600e3;   // ntfy.sh accepte 3 jours max
+  let n = 0;
+  for (const e of evenements) {
+    const cle = `${new Date(e.t).toISOString()} ${e.sujet}`;
+    if (e.t < maintenant + 15e3 || e.t > horizon || deja.includes(cle)) continue;
+    const r = await fetch('https://ntfy.sh/', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic: process.env.NTFY_TOPIC, title: e.sujet, message: e.texte, click: SITE, priority: 4, delay: String(Math.floor(e.t / 1000)) }) });
+    const corps = await r.text();
+    if (!r.ok) { console.log(`Échec ntfy (${r.status}) pour ${cle} : ${corps}`); continue; }
+    deja.push(cle); n++;
+    console.log(`Programmé : ${new Date(e.t).toLocaleString('fr-FR', { timeZone: 'Europe/Paris' })} — ${e.sujet}`);
+  }
+  deja = deja.filter(c => Date.parse(c.slice(0, 24)) > maintenant - 7 * 864e5);   // ménage
+  fs.writeFileSync(ETAT, JSON.stringify(deja.sort(), null, 1) + '\n');
+  console.log(n ? `${n} notification(s) programmée(s).` : 'Rien de nouveau à programmer.');
+}
+
+// --- Mail : envoyé sur le moment (pas de programmation possible), au mieux. ---
+async function mailsDeLHeure() {
+  if (!process.env.SMTP_USER) return;
+  const debut = Math.floor(Date.now() / 3600e3) * 3600e3 + 30 * 60e3;
+  const a_faire = evenements.filter(e => e.t >= debut && e.t < debut + 3600e3);
+  const ntfy = process.env.NTFY_TOPIC; delete process.env.NTFY_TOPIC;      // le push est déjà programmé
+  for (const e of a_faire) { await attendre(e.t - Date.now()); await envoyer(e); }
+  if (ntfy) process.env.NTFY_TOPIC = ntfy;
+}
+
 if (process.argv[2] === 'test') {
   await envoyer({ sujet: '🔔 Test des notifications', texte: 'Si tu lis ceci, les notifications marchent.' });
 } else {
-  // Lancée vers HH:17, chaque exécution gère les événements entre HH:30 et (HH+1):30.
-  // Un créneau fixe par heure évite les doublons si GitHub lance une exécution en retard.
-  const debut = Math.floor(Date.now() / 3600e3) * 3600e3 + 30 * 60e3;
-  const a_faire = evenements.filter(e => e.t >= debut && e.t < debut + 3600e3);
-  if (!a_faire.length) console.log('Rien à envoyer dans l\'heure.');
-  for (const e of a_faire) { await attendre(e.t - Date.now()); await envoyer(e); }
+  await programmerNtfy();
+  await mailsDeLHeure();
 }
