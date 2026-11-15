@@ -1,14 +1,14 @@
 // Envoie « Plus que 10 minutes… » puis « Nouvel indice disponible » chaque jour.
-// Les heures sont lues directement dans index.html (HEURE, HEURE_CADEAU, DEBUT).
+// Les dates et heures sont lues directement dans index.html (DATES, HEURE, CADEAU, HEURE_CADEAU).
 import fs from 'node:fs';
 
-const NB_INDICES = 29;                 // nombre d'indices avant le cadeau
 const AVANCE_MIN = 10;                 // le rappel part X minutes avant
 const SITE = process.env.SITE_URL || 'https://frenskyt.github.io/surprise/';
 
 const src = fs.readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
 const lire = (nom) => { const m = src.match(new RegExp(`const ${nom}\\s*=\\s*([^;]+);`)); if (!m) throw new Error(nom + ' introuvable'); return JSON.parse(m[1]); };
-const HEURE = lire('HEURE'), HEURE_CADEAU = lire('HEURE_CADEAU'), DEBUT = lire('DEBUT');
+const DATES = lire('DATES'), HEURE = lire('HEURE'), CADEAU = lire('CADEAU'), HEURE_CADEAU = lire('HEURE_CADEAU');
+const NB_INDICES = DATES.length;
 
 // Instant UTC correspondant à une date/heure de Paris (gère l'heure d'été/hiver).
 function parisVersUtc(y, mo, d, h) {
@@ -24,9 +24,9 @@ function parisVersUtc(y, mo, d, h) {
 // Liste de tous les événements (rappel + sortie) jusqu'au cadeau.
 const evenements = [];
 for (let k = 0; k <= NB_INDICES; k++) {
-  const j = new Date(Date.UTC(DEBUT[0], DEBUT[1] - 1, DEBUT[2] + k));
   const cadeau = k === NB_INDICES;
-  const t = parisVersUtc(j.getUTCFullYear(), j.getUTCMonth() + 1, j.getUTCDate(), cadeau ? HEURE_CADEAU : HEURE);
+  const [y, mo, d] = (cadeau ? CADEAU : DATES[k]).split('-').map(Number);
+  const t = parisVersUtc(y, mo, d, cadeau ? HEURE_CADEAU : HEURE);
   evenements.push({ t: t - AVANCE_MIN * 60e3, sujet: cadeau ? `🎁 Plus que ${AVANCE_MIN} minutes avant ton cadeau…` : `⏳ Plus que ${AVANCE_MIN} minutes avant le prochain indice`, texte: cadeau ? 'Le grand moment approche. Prépare-toi…' : `L'indice n°${k + 1} arrive dans ${AVANCE_MIN} minutes.` });
   evenements.push({ t, sujet: cadeau ? '🎁 Ton cadeau t\'attend !' : `✨ Nouvel indice disponible (n°${k + 1})`, texte: cadeau ? 'C\'est l\'heure. Va ouvrir ton cadeau 🎉' : `L'indice n°${k + 1} vient d'apparaître. À toi de jouer 🕵️‍♀️` });
 }
