@@ -1,6 +1,7 @@
 // Envoie « Plus que 10 minutes… » puis « Nouvel indice disponible » chaque jour.
 // Les dates et heures sont lues directement dans index.html (DATES, HEURE, CADEAU, HEURE_CADEAU).
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 
 const AVANCE_MIN = 10;                 // le rappel part X minutes avant
 const SITE = process.env.SITE_URL || 'https://frenskyt.github.io/surprise/';
@@ -62,9 +63,10 @@ async function programmerNtfy() {
   if (!process.env.NTFY_TOPIC) { console.log('NTFY_TOPIC absent : pas de push programmé.'); return; }
   let deja = []; try { deja = JSON.parse(fs.readFileSync(ETAT, 'utf8')); } catch {}
   const maintenant = Date.now(), horizon = maintenant + 70 * 3600e3;   // ntfy.sh accepte 3 jours max
+  const marque = createHash('sha256').update(process.env.NTFY_TOPIC).digest('hex').slice(0, 6);   // change si le topic change
   let n = 0;
   for (const e of evenements) {
-    const cle = `${new Date(e.t).toISOString()} ${e.sujet}`;
+    const cle = `${new Date(e.t).toISOString()} ${e.sujet} #${marque}`;
     if (e.t < maintenant + 15e3 || e.t > horizon || deja.includes(cle)) continue;
     const r = await fetch('https://ntfy.sh/', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ topic: process.env.NTFY_TOPIC, title: e.sujet, message: e.texte, click: SITE, priority: 4, delay: String(Math.floor(e.t / 1000)) }) });
@@ -90,6 +92,7 @@ async function mailsDeLHeure() {
 
 if (process.argv[2] === 'test') {
   await envoyer({ sujet: '🔔 Test des notifications', texte: 'Si tu lis ceci, les notifications marchent.' });
+  await programmerNtfy();
 } else {
   await programmerNtfy();
   await mailsDeLHeure();
